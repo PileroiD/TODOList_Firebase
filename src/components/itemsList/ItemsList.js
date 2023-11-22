@@ -3,7 +3,7 @@ import Item from "../Item/Item";
 import "./ItemsList.scss";
 
 const ItemsList = ({ tasks, updateTask, deleteTask }) => {
-    const tasksList = tasks.map((task) => {
+    const tasksList = Object.values(tasks).map((task) => {
         return (
             <Item
                 key={task.id}

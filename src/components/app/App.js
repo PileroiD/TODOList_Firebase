@@ -1,95 +1,94 @@
 import ItemsList from "../itemsList/ItemsList";
 import Actions from "../actions/Actions";
+import { generateRandomId, getTaskKey } from "../utils/utils";
+import { ref, onValue, push, update, remove } from "firebase/database";
+import { db } from "../../firebase";
 
 import { useState, useEffect } from "react";
 import "./App.scss";
 
 function App() {
-    const [tasks, setTasks] = useState([]);
+    const [tasks, setTasks] = useState({});
     const [isLoading, setIsLoading] = useState(false);
-    const [updateTasksFlag, setUpdateTasksFlag] = useState(false);
     const [wasSearched, setWasSearched] = useState(false);
-
-    const updateTasks = () => setUpdateTasksFlag(!updateTasksFlag);
+    const [spareTasks, setSpareTasks] = useState({});
 
     useEffect(() => {
         setIsLoading(true);
+        const tasksDBRef = ref(db, "tasks");
 
-        fetch("http://localhost:3000/tasks")
-            .then((data) => data.json())
-            .then((data) => setTasks(data))
-            .finally(() => setIsLoading(false));
-    }, [updateTasksFlag]);
+        return onValue(tasksDBRef, (snapshot) => {
+            const loadedTasks = snapshot.val() || [];
+
+            setTasks(loadedTasks);
+            setIsLoading(false);
+        });
+    }, []);
 
     const addTask = (text) => {
         setIsLoading(true);
 
-        fetch("http://localhost:3000/tasks", {
-            method: "POST",
-            headers: { "Content-Type": "application/json;charset=utf-8" },
-            body: JSON.stringify({
-                text,
-            }),
-        }).finally(() => {
+        const tasksDBRef = ref(db, "tasks");
+
+        push(tasksDBRef, {
+            id: generateRandomId(),
+            text: text,
+        }).then(() => {
             setIsLoading(false);
-            updateTasks();
         });
     };
 
     const updateTask = (newtext, taskId) => {
         setIsLoading(true);
 
-        fetch(`http://localhost:3000/tasks/${taskId}`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json;charset=utf-8" },
-            body: JSON.stringify({
-                text: newtext,
-            }),
-        })
-            .then((data) => data.json())
-            .finally(() => {
-                setIsLoading(false);
-                updateTasks();
-                setWasSearched(false);
-            });
+        const taskKey = getTaskKey(tasks, taskId);
+        const taskDBRef = ref(db, `tasks/${taskKey}`);
+
+        update(taskDBRef, {
+            text: newtext,
+        }).then(() => {
+            setIsLoading(false);
+            setWasSearched(false);
+        });
     };
 
     const searchTask = (searchingText) => {
-        let newTasks = tasks
-            .map((item) => {
-                if (
+        const resultObject = Object.fromEntries(
+            Object.values(tasks)
+                .filter((item) =>
                     item.text
                         .toLowerCase()
                         .includes(searchingText.toLowerCase())
-                ) {
-                    return item;
-                }
-            })
-            .filter((item) => item !== undefined);
+                )
+                .map((item) => [
+                    Object.keys(tasks).find((key) => tasks[key].id === item.id),
+                    item,
+                ])
+                .filter(([key, item]) => key)
+        );
 
-        setTasks(newTasks);
+        setSpareTasks(tasks);
+        setTasks(resultObject);
     };
 
     const deleteTask = (taskId) => {
         setIsLoading(true);
 
-        fetch(`http://localhost:3000/tasks/${taskId}`, {
-            method: "DELETE",
-        })
-            .then((data) => data.json())
-            .finally(() => {
-                setIsLoading(false);
-                updateTask();
-                setWasSearched(false);
-            });
+        const taskKey = getTaskKey(tasks, taskId);
+        const taskDBRef = ref(db, `tasks/${taskKey}`);
+
+        remove(taskDBRef).then(() => {
+            setIsLoading(false);
+            setWasSearched(false);
+        });
     };
 
     const showAllTasks = () => {
-        updateTasks();
+        setTasks(spareTasks);
     };
 
     const sortTasks = () => {
-        const tasksCopy = [...tasks];
+        const tasksCopy = [...Object.values(tasks)];
 
         const sortedTasks = tasksCopy.sort((a, b) => {
             const textA = a.text.toLowerCase();
@@ -102,6 +101,11 @@ function App() {
             } else {
                 return 0;
             }
+        });
+
+        const sortedTaskProper = {};
+        Object.keys(tasks).forEach((key, i) => {
+            sortedTaskProper[key] = sortedTasks[i];
         });
 
         setTasks(sortedTasks);
@@ -120,7 +124,7 @@ function App() {
                 />
                 {isLoading ? (
                     <div className="loader"></div>
-                ) : tasks.length ? (
+                ) : Object.values(tasks).length ? (
                     <ItemsList
                         updateTask={updateTask}
                         tasks={tasks}
